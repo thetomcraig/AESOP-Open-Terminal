@@ -10,6 +10,31 @@ AESOP is a Raspberry Pi 3 Model B Plus running Raspberry Pi OS (Debian 13/Trixie
 
 The intended workflow is to let an AI execute shell commands and create/run scripts in a persistent workspace on AESOP, while keeping ARISTON's application data, Docker daemon, and other host services off the execution container.
 
+### Architecture at a glance
+
+```text
+Open WebUI (ARISTON)
+        |
+        | HTTP / WebSocket, bearer API key
+        v
+AESOP Raspberry Pi
+  Docker: open-terminal
+        |
+        +-- /workspace (persistent host bind mount)
+        |     +-- project files and scripts
+        |     +-- project-specific Python virtual environments
+        |     +-- host-managed gitconfig source
+        |
+        +-- outbound Internet access for APIs and package downloads
+```
+
+Open WebUI connects to `http://192.168.1.199:8000`. The published service is restricted by the host firewall to ARISTON (`192.168.1.131`). The firewall policy protects inbound access to the published service; it does not block connections initiated by the container to other LAN hosts. See [Section 6](#6-networking-and-firewall-policy) for the networking details and accepted trade-off.
+
+### Related documents
+
+- [`AGENTS.md`](AGENTS.md), when present in the deployment or repository, defines the operating rules AI agents must follow. The deployment-level path is `/home/open-terminal/AGENTS.md`.
+- This document is the technical implementation and operations reference. Keep it synchronized with the live deployment and the source files.
+
 ### Hosts
 
 | Host    | Role                                                | Known address   |
@@ -668,7 +693,9 @@ WantedBy=halt.target reboot.target shutdown.target
 
 ## 12. Change-management rules for AI agents
 
-AI agents operating on AESOP must follow `/home/open-terminal/AGENTS.md` if present, and the repository's `AGENTS.md` when working in a repository.
+AI agents operating on AESOP must follow `/home/open-terminal/AGENTS.md` if present, and the repository's `AGENTS.md` when working in a repository. These instructions take precedence for operational conduct; this reference describes the deployment but does not grant permission to change it.
+
+Operational principle: inspect the live system before changing it, make one logical change at a time, validate the result, preserve the firewall and isolation boundaries, and never expose secrets.
 
 Minimum requirements:
 
