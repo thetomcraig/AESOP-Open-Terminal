@@ -1,1 +1,1 @@
-# AESOP-Open-Terminal
+# AESOP Open Terminal Configuration
