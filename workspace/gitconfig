@@ -1,0 +1,6 @@
+[user]
+    name = aesop-open-terminal[bot]
+    email = 360448379+aesop-open-terminal[bot]@users.noreply.github.com
+
+[safe]
+    directory = /workspace/movie-search

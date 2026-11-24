@@ -1,0 +1,65 @@
+services:
+  open-terminal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: open-terminal:slim-pyjwt
+    container_name: open-terminal
+    restart: unless-stopped
+    ports:
+      - "192.168.1.199:8000:8000"
+    command:
+      - run
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --cwd
+      - /workspace
+      - --isolated
+      - --cors-allowed-origins
+      - ""
+
+    environment:
+      GIT_CONFIG_GLOBAL: /workspace/.open-terminal/gitconfig
+      OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
+      GITHUB_APP_ID: "123456"
+      GITHUB_INSTALLATION_ID: "789012"
+
+      OPEN_TERMINAL_SETUP_SCRIPT: |
+        set -eux
+        cp /workspace/gitconfig /workspace/.open-terminal/gitconfig
+        echo "Git configuration installed"
+
+    secrets:
+      - api_key
+      - github_app_private_key
+
+    volumes:
+      - type: bind
+        source: /home/open-terminal/workspace
+        target: /workspace
+
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - SETUID
+      - SETGID
+      - SETPCAP
+      - CHOWN
+      - DAC_OVERRIDE
+
+    security_opt:
+      - no-new-privileges:true
+
+    mem_limit: 384m
+    memswap_limit: 512m
+    cpus: 1.5
+    pids_limit: 128
+
+secrets:
+  api_key:
+    file: /home/open-terminal/deployment/api-key
+  github_app_private_key:
+    file: /home/open-terminal/deployment/private-key-gh.pem
