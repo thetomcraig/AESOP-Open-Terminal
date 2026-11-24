@@ -1,4 +1,4 @@
-# AESOP Open Terminal Configuration
+# AESOP Open Terminal — Implementation and Operations Reference
 
 > Audience: AI agents and engineers maintaining the AESOP Open Terminal deployment.
 >
@@ -12,12 +12,12 @@ The intended workflow is to let an AI execute shell commands and create/run scri
 
 ### Hosts
 
-| Host | Role | Known address |
-|---|---|---|
-| AESOP | Raspberry Pi running Open Terminal | `192.168.1.199` |
+| Host    | Role                                                | Known address   |
+| ------- | --------------------------------------------------- | --------------- |
+| AESOP   | Raspberry Pi running Open Terminal                  | `192.168.1.199` |
 | ARISTON | Ubuntu server running Open WebUI and other services | `192.168.1.131` |
-| Mac | Administrative workstation / SSH client | `192.168.1.85` |
-| Router | LAN gateway | `192.168.1.1` |
+| Mac     | Administrative workstation / SSH client             | `192.168.1.85`  |
+| Router  | LAN gateway                                         | `192.168.1.1`   |
 
 These are recorded addresses, not guaranteed DHCP reservations. Verify current addresses before changing firewall rules or connection settings.
 
@@ -43,6 +43,11 @@ This hardware constraint is why the deployment uses the Open Terminal `slim` ima
 - Compose file: `/home/open-terminal/deployment/compose.yml`
 - API key file: `/home/open-terminal/api-key`
 - Container API key secret path: `/run/secrets/api_key`
+- GitHub App credentials: App ID and installation ID supplied through environment variables; private key supplied as a Docker secret
+- GitHub App private-key container path: `/run/secrets/github_app_private_key`
+- Host-managed Git identity: `/home/open-terminal/workspace/gitconfig`
+- Container global Git identity: `/workspace/.open-terminal/gitconfig`
+- GitHub App push helper: `deployment/git-push-with-app.sh` (inside the workspace/repository, as deployed)
 - Container runs application as UID/GID `1000:1000` (`user`)
 - Workspace host ownership: UID `999`, GID `1000`, mode `0770` (recorded setup)
 - Resource limits: 384 MiB memory, 512 MiB memory+swap, 1.5 CPUs, 128 PIDs
@@ -50,7 +55,7 @@ This hardware constraint is why the deployment uses the Open Terminal `slim` ima
 - No Docker socket mounted
 - Only the workspace is bind-mounted from the host
 
-The API key is a secret. Never print it, paste it into chat, commit it, or include it in logs or documentation.
+The API key and GitHub App private key are secrets. Never print them, paste them into chat, commit them, or include their contents in logs or documentation.
 
 ## 3. Host preparation and security controls
 
@@ -59,6 +64,7 @@ The API key is a secret. Never print it, paste it into chat, commit it, or inclu
 AESOP runs Raspberry Pi OS / Debian 13 Trixie, 64-bit. Docker Engine and Docker Compose plugin were installed from the appropriate Debian repository.
 
 Recorded versions at setup:
+
 - Docker Engine 29.9.3
 - Docker Compose 5.7.0
 
@@ -144,12 +150,12 @@ open-terminal:x:999:983::/home/open-terminal:/usr/sbin/nologin
 
 Recorded directories:
 
-| Path | Purpose |
-|---|---|
-| `/home/open-terminal` | Dedicated host account home; mode `0700` |
+| Path                             | Purpose                                     |
+| -------------------------------- | ------------------------------------------- |
+| `/home/open-terminal`            | Dedicated host account home; mode `0700`    |
 | `/home/open-terminal/deployment` | Compose deployment; root-owned, mode `0755` |
-| `/home/open-terminal/workspace` | Persistent AI workspace |
-| `/home/open-terminal/api-key` | API key file; root:root, mode `0600` |
+| `/home/open-terminal/workspace`  | Persistent AI workspace                     |
+| `/home/open-terminal/api-key`    | API key file; root:root, mode `0600`        |
 
 The workspace is writable by container UID 1000 through host group GID 1000. Do not change ownership or permissions casually; the container's `gosu` startup path resets supplementary groups.
 
@@ -179,62 +185,22 @@ Never rotate the key without also updating the Open WebUI connection. Never disc
 
 ## 4. Docker Compose deployment
 
-Current intended file: `/home/open-terminal/deployment/compose.yml`
+Current deployment directory: `/home/open-terminal/deployment`
 
-```yaml
-services:
-  open-terminal:
-    image: ghcr.io/open-webui/open-terminal:slim
-    container_name: open-terminal
-    restart: unless-stopped
-    ports:
-      - "192.168.1.199:8000:8000"
+Current Compose file: `/home/open-terminal/deployment/compose.yml`
 
-    command:
-      - run
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --cwd
-      - /workspace
-      - --isolated
-      - --cors-allowed-origins
-      - ""
+Treat the Compose file itself as the source of truth for service configuration. Do not maintain a second copy of its YAML in this document. The deployment currently includes:
 
-    environment:
-      OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
+- The `ghcr.io/open-webui/open-terminal:slim` image.
+- The API key Docker secret.
+- The GitHub App private-key Docker secret.
+- GitHub App ID and installation ID environment variables.
+- `GIT_CONFIG_GLOBAL` pointing to `/workspace/.open-terminal/gitconfig`.
+- An `OPEN_TERMINAL_SETUP_SCRIPT` that copies `/workspace/gitconfig` to `/workspace/.open-terminal/gitconfig` at startup.
+- The persistent `/home/open-terminal/workspace` bind mount.
+- The documented container capability restrictions and resource limits.
 
-    secrets:
-      - api_key
-
-    volumes:
-      - type: bind
-        source: /home/open-terminal/workspace
-        target: /workspace
-
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-      - SETUID
-      - SETGID
-      - SETPCAP
-      - CHOWN
-      - DAC_OVERRIDE
-
-    security_opt:
-      - no-new-privileges:true
-
-    mem_limit: 384m
-    memswap_limit: 512m
-    cpus: 1.5
-    pids_limit: 128
-
-secrets:
-  api_key:
-    file: /home/open-terminal/api-key
-```
+The host-managed Git identity file is stored at `/home/open-terminal/workspace/gitconfig`. Because the workspace is bind-mounted at `/workspace`, the setup script can copy it into the container-side Open Terminal configuration directory without an additional host mount.
 
 **Important current-state detail:** `OPEN_TERMINAL_ALLOWED_DOMAINS` is intentionally absent. It was previously set to an empty string, which caused the container's entrypoint to configure deny-all egress. The variable was removed and the container recreated so scripts can reach public Internet services and download Python dependencies.
 
@@ -248,7 +214,7 @@ sudo docker compose ps
 sudo docker compose logs --tail=100 open-terminal
 ```
 
-The Compose file above reflects the recorded configuration. Always inspect the actual file before overwriting it; the deployed file may have changed.
+Always inspect the actual Compose file before changing it. This document describes the intended behavior but is not a replacement for the deployed configuration.
 
 ## 5. Container behavior and isolation
 
@@ -384,6 +350,7 @@ Do not edit Docker-managed nftables chains directly. The persistent custom-chain
 A test run from the Open WebUI terminal successfully fetched `https://example.com` and returned HTTP status `200`.
 
 This means:
+
 - DNS and public HTTPS requests work.
 - Python scripts can call public APIs and web services.
 - Package downloads can reach public package repositories.
@@ -430,6 +397,7 @@ python script.py
 The workspace is a persistent bind mount, so virtual environments and downloaded packages survive container recreation as long as the host workspace is preserved.
 
 Recommended project hygiene:
+
 - Keep `.venv` inside the project workspace when persistence is desired.
 - Record dependencies in `requirements.txt` or `pyproject.toml`.
 - Prefer `python -m pip` over relying on a global `pip` executable.
@@ -449,6 +417,7 @@ Example reproducible requirements workflow:
 The image has `apt` and `apt-get`, but the application runs as an unprivileged user and should not be granted root access merely to install system packages dynamically.
 
 For a required OS package:
+
 1. Identify the package and why it is needed.
 2. Add it to a reviewed custom image build, or ask the host administrator to rebuild/update the image.
 3. Do not run privileged package-management commands from an AI-controlled shell.
@@ -460,23 +429,126 @@ The full upstream Open Terminal image has package-installation environment varia
 
 Open WebUI on ARISTON connects to AESOP with:
 
-| Setting | Value |
-|---|---|
-| Name | `AESOP` |
-| URL | `http://192.168.1.199:8000` |
-| Authentication | Bearer API key stored in `/home/open-terminal/api-key` |
-| Chat uploads | Default |
-| Working directory context | On |
-| User shell tools | Automatic |
-| Forward cookies | Off |
+| Setting                   | Value                                                  |
+| ------------------------- | ------------------------------------------------------ |
+| Name                      | `AESOP`                                                |
+| URL                       | `http://192.168.1.199:8000`                            |
+| Authentication            | Bearer API key stored in `/home/open-terminal/api-key` |
+| Chat uploads              | Default                                                |
+| Working directory context | On                                                     |
+| User shell tools          | Automatic                                              |
+| Forward cookies           | Off                                                    |
 
 The API key must match the contents of AESOP's key file. Do not include the key in prompts, source control, or documentation.
 
 The connection was tested successfully. Open Terminal logs showed WebSocket connections from ARISTON and successful `GET /git/status` responses.
 
-## 9. Operations and troubleshooting
+## 9. GitHub App integration
 
-### 9.1 Common commands
+Open Terminal uses a GitHub App installation token for authenticated Git pushes. Git commit attribution is configured separately through the bot account's Git identity.
+
+### 9.1 GitHub App configuration
+
+The deployment uses a GitHub App with access restricted to the repositories Open Terminal needs. The app requires:
+
+- **Contents:** Read and write
+- **Metadata:** Read-only
+
+The deployment receives the App ID through `GITHUB_APP_ID` and the installation ID through `GITHUB_INSTALLATION_ID`. The App's PEM private key is provided as a Docker secret at `/run/secrets/github_app_private_key`.
+
+Do not store the private key in the workspace, repository, or ordinary environment variables. Do not print it or include it in logs. When recreating the deployment, obtain the App ID, installation ID, and private key from the GitHub App settings and installation rather than copying values from an old machine.
+
+### 9.2 Push authentication
+
+The push helper is `deployment/git-push-with-app.sh`. Its authentication flow is:
+
+1. Read the GitHub App private key.
+2. Generate a signed JWT using the App ID.
+3. Exchange the JWT with GitHub for an installation access token using the installation ID.
+4. Extract the `token` field from the API response.
+5. Use the short-lived installation token to authenticate `git push`.
+
+The helper must return only the token to the calling shell. It must not print the JWT, private key, installation token, or full token response. Generate a fresh installation token when pushing; do not persist it as a long-lived credential.
+
+### 9.3 Git commit identity and bot attribution
+
+Push authentication does not determine the author or committer recorded in a Git commit. Those identities come from Git's `user.name` and `user.email` configuration.
+
+GitHub associates the commits with the App bot account when the commit email uses this format:
+
+```text
+BOT_USER_ID+APP_SLUG[bot]@users.noreply.github.com
+```
+
+The numeric prefix is the **bot user account ID**, not the GitHub App ID.
+
+Current AESOP bot identity:
+
+| Field        | Value                                                        |
+| ------------ | ------------------------------------------------------------ |
+| Bot login    | `aesop-open-terminal[bot]`                                   |
+| Bot user ID  | `360448379`                                                  |
+| Commit email | `360448379+aesop-open-terminal[bot]@users.noreply.github.com` |
+| Commit name  | `aesop-open-terminal[bot]`                                   |
+
+When recreating the setup, query the bot account rather than assuming its ID:
+
+```bash
+curl -fsSL 'https://api.github.com/users/APP_SLUG%5Bbot%5D' \
+  | python3 -c 'import json,sys; u=json.load(sys.stdin); print(f"Login: {u[\"login\"]}\nID: {u[\"id\"]}\nType: {u[\"type\"]}")'
+```
+
+Use the returned bot login and ID to construct the noreply email. Do not substitute the App ID for the bot user ID.
+
+### 9.4 Git configuration files and startup behavior
+
+The Git identity is maintained in two locations:
+
+| Path                                      | Purpose                                                      |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| `/home/open-terminal/workspace/gitconfig` | Host-managed source configuration, persistent in the workspace |
+| `/workspace/.open-terminal/gitconfig`     | Container-side global Git configuration used by Git          |
+
+`GIT_CONFIG_GLOBAL` points Git to `/workspace/.open-terminal/gitconfig`. The Open Terminal startup script copies `/workspace/gitconfig` to that location each time the container starts. This avoids relying on `$HOME`, which was observed to resolve to `/root` in the setup-script environment even though the interactive terminal user has a different home directory.
+
+The current Git identity file contains the bot identity shown above and a `safe.directory` entry for the repository path. Update that path if the repository location changes.
+
+Git repository-local configuration overrides the global configuration. If a repository has an old local identity, remove those local overrides from inside that repository:
+
+```bash
+git config --local --unset user.name
+git config --local --unset user.email
+```
+
+Do not remove other repository-local Git settings as part of this identity change.
+
+### 9.5 Verify GitHub App authentication and attribution
+
+From inside the relevant repository in Open Terminal:
+
+```bash
+# Confirm the global identity and its source file
+git config --show-origin --get user.name
+git config --show-origin --get user.email
+
+# Inspect the latest commit's author and committer
+git log -1 --format='%an <%ae>%n%cn <%ce>'
+```
+
+The config origin should be `/workspace/.open-terminal/gitconfig`. The author and committer should use the bot login and bot noreply email.
+
+To test attribution without changing project files, create an empty commit and push it using the GitHub App helper:
+
+```bash
+git commit --allow-empty -m "Test GitHub App attribution"
+./deployment/git-push-with-app.sh
+```
+
+Verify the new commit on GitHub. Existing commits are not changed when the Git identity configuration is updated; only newly created commits use the new identity.
+
+## 10. Operations and troubleshooting
+
+### 10.1 Common commands
 
 ```bash
 # Container status
@@ -507,7 +579,7 @@ sudo du -sh /home/open-terminal/workspace
 
 Use `vim` for terminal editing. Do not use `nano`.
 
-### 9.2 Test API connectivity from Open WebUI
+### 10.2 Test API connectivity from Open WebUI
 
 From the Open WebUI terminal connected to AESOP:
 
@@ -519,11 +591,12 @@ python -c "import urllib.request; print(urllib.request.urlopen('https://example.
 ```
 
 Expected:
+
 - Working directory `/workspace`
 - Runtime user UID/GID 1000
 - HTTPS test returns `200` when external connectivity is healthy
 
-### 9.3 Test package installation
+### 10.3 Test package installation
 
 ```bash
 python -m venv /workspace/.venv-test
@@ -533,7 +606,7 @@ python -m venv /workspace/.venv-test
 
 A successful pip version check confirms venv bootstrapping. A successful install confirms access to the configured package index.
 
-### 9.4 Check container and firewall logs
+### 10.4 Check container and firewall logs
 
 ```bash
 sudo docker logs --tail=200 open-terminal
@@ -543,31 +616,36 @@ sudo iptables -S DOCKER-USER
 sudo ip6tables -S DOCKER-USER
 ```
 
-### 9.5 Common failure modes
+### 10.5 Common failure modes
 
-| Symptom | Checks |
-|---|---|
-| Open WebUI cannot connect | Container status/logs, AESOP IP, published port, API key, `DOCKER-USER`, systemd firewall service |
-| HTTPS request fails | DNS, container outbound connectivity, route, remote service availability |
-| `python -m pip` says no module | Create a venv and use `.venv/bin/python -m pip` |
-| Permission denied in workspace | Check host workspace group/mode and container UID/GID |
-| Container exits on startup | Compose validation, logs, secret path/mode, resource pressure |
-| Container is OOM-killed | `docker stats`, kernel logs, lower workload or reassess limits |
-| Connection blocked from an admin device | This is expected for sources other than ARISTON under the current published-port policy |
+| Symptom                                      | Checks                                                       |
+| -------------------------------------------- | ------------------------------------------------------------ |
+| Open WebUI cannot connect                    | Container status/logs, AESOP IP, published port, API key, `DOCKER-USER`, systemd firewall service |
+| HTTPS request fails                          | DNS, container outbound connectivity, route, remote service availability |
+| `python -m pip` says no module               | Create a venv and use `.venv/bin/python -m pip`              |
+| Permission denied in workspace               | Check host workspace group/mode and container UID/GID        |
+| Container exits on startup                   | Compose validation, logs, secret path/mode, resource pressure |
+| Container is OOM-killed                      | `docker stats`, kernel logs, lower workload or reassess limits |
+| Connection blocked from an admin device      | This is expected for sources other than ARISTON under the current published-port policy |
+| Git push authentication fails                | Check App installation/repository access, App ID and installation ID, private-key secret availability, system time, and helper logs without exposing credentials |
+| GitHub shows the wrong commit author         | Check repository-local `user.name`/`user.email`, `GIT_CONFIG_GLOBAL`, startup copy, and the bot user ID in the noreply email |
+| Git identity config is missing after restart | Check `/workspace/gitconfig`, `/workspace/.open-terminal/`, the startup script, and container startup logs |
 
-## 10. Backups and data lifecycle
+## 11. Backups and data lifecycle
 
 The persistent workspace is the primary user data created by the AI on AESOP. Back it up independently of the container image.
 
 - Workspace: `/home/open-terminal/workspace`
 - Compose/deployment: `/home/open-terminal/deployment`
+- Git identity source: `/home/open-terminal/workspace/gitconfig` (included in the workspace backup)
 - API key: `/home/open-terminal/api-key` (back up securely, or retain a secure recovery/rotation procedure)
+- GitHub App private key: retain through the approved secret-management/backup process; do not place it in the workspace backup or repository
 
 Do not back up the API key into an unencrypted or broadly accessible location. Exclude virtual environments from backups if they are easily reproducible and storage is constrained, but preserve source files, lockfiles, and requirements metadata.
 
 Container recreation does not remove the bind-mounted workspace. Removing the host workspace does.
 
-### 10.1 rpi-clone shutdown backup
+### 11.1 rpi-clone shutdown backup
 
 AESOP uses `rpi-clone` to create a full disk backup before shutdown via a systemd service:
 
@@ -586,12 +664,14 @@ TimeoutStartSec=infinity
 
 [Install]
 WantedBy=halt.target reboot.target shutdown.target
+```
 
-## 11. Change-management rules for AI agents
+## 12. Change-management rules for AI agents
 
 AI agents operating on AESOP must follow `/home/open-terminal/AGENTS.md` if present, and the repository's `AGENTS.md` when working in a repository.
 
 Minimum requirements:
+
 1. Inspect before modifying. Do not assume this document is current.
 2. Do not expose, print, copy into chat, or commit API keys or other secrets.
 3. Do not modify SSH, UFW, Docker firewall rules, systemd units, Docker daemon configuration, or network settings without explicit user authorization.
@@ -607,7 +687,7 @@ Minimum requirements:
 13. Use `vim`/`vi`, not `nano`, for terminal editing.
 14. Make one logical change at a time, validate it, and report the exact result.
 
-## 12. Deferred or intentionally accepted items
+## 13. Deferred or intentionally accepted items
 
 - Read-only container root filesystem: deferred.
 - Domain allowlist / outbound proxy: intentionally removed in favor of ordinary Docker outbound access.
@@ -615,11 +695,12 @@ Minimum requirements:
 - Dynamic privileged `apt` installation: not enabled; use a reviewed image build.
 - Full Open Terminal image: not selected because of Pi resource constraints.
 
-## 13. Monthly security review
+## 14. Monthly security review
 
 A monthly reminder was created for the AESOP security review. The review is a human checklist, not an automated scan.
 
 Review:
+
 - OS updates and reboot status.
 - Open Terminal image and Compose changes.
 - Container UID, effective capabilities, `no-new-privileges`, resource limits.
@@ -628,10 +709,13 @@ Review:
 - `DOCKER-USER` rules and persistence service.
 - SSH key-only access and UFW policy.
 - Container/system logs and disk usage.
-- API key exposure/rotation needs.
-- Workspace backup status.
+- API key and GitHub App private-key exposure/rotation needs.
+- GitHub App repository permissions and installation access.
+- Git push helper behavior and token handling (no credentials in logs).
+- Git author/committer identity and global config source.
+- Workspace backup status, including the host-managed `gitconfig`.
 
-## 14. Current-state verification checklist
+## 15. Current-state verification checklist
 
 Run these checks before relying on this document after a period of time:
 
@@ -665,6 +749,10 @@ sudo stat -c '%A %U:%G %n' \
 # Runtime identity
 sudo docker exec open-terminal id
 sudo docker exec open-terminal sh -c 'python --version; command -v apt apt-get'
+
+# GitHub App integration (does not print secret contents)
+sudo docker exec open-terminal sh -c 'test -r /run/secrets/github_app_private_key && echo "GitHub App private-key secret is readable"'
+sudo docker exec open-terminal sh -c 'test -r /workspace/.open-terminal/gitconfig && echo "Global Git config is present"'
 ```
 
 Update this document when configuration changes. Record the date, rationale, exact changed files, validation performed, and any security trade-off.
