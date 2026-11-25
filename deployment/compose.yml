@@ -20,11 +20,11 @@ services:
       - --cors-allowed-origins
       - ""
 
-    environment:
-      GIT_CONFIG_GLOBAL: /workspace/.open-terminal/gitconfig
-      OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
-      GITHUB_APP_ID: "123456"
-      GITHUB_INSTALLATION_ID: "789012"
+      environment:
+        GIT_CONFIG_GLOBAL: /open-terminal/gitconfig
+        OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
+        GITHUB_APP_ID: "123456"
+        GITHUB_INSTALLATION_ID: "789012"
 
       OPEN_TERMINAL_SETUP_SCRIPT: |
         set -eux

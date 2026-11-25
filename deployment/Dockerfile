@@ -10,5 +10,9 @@ RUN apt-get update \
     && /opt/pyjwt/bin/pip install --no-cache-dir "PyJWT[crypto]" \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/opt/pyjwt/bin:${PATH}"
+COPY gitconfig /open-terminal/gitconfig
+COPY --chmod=755 git-push-with-token.sh /open-terminal/git-push-with-token.sh
 
+RUN mkdir -p /workspace
+
+ENV PATH="/opt/pyjwt/bin:${PATH}"
