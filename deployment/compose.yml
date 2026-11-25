@@ -20,16 +20,11 @@ services:
       - --cors-allowed-origins
       - ""
 
-      environment:
-        GIT_CONFIG_GLOBAL: /open-terminal/gitconfig
-        OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
-        GITHUB_APP_ID: "123456"
-        GITHUB_INSTALLATION_ID: "789012"
-
-      OPEN_TERMINAL_SETUP_SCRIPT: |
-        set -eux
-        cp /workspace/gitconfig /workspace/.open-terminal/gitconfig
-        echo "Git configuration installed"
+    environment:
+      GIT_CONFIG_GLOBAL: /open-terminal/gitconfig
+      OPEN_TERMINAL_API_KEY_FILE: /run/secrets/api_key
+      GITHUB_APP_ID: "123456"
+      GITHUB_INSTALLATION_ID: "789012"
 
     secrets:
       - api_key
@@ -37,7 +32,7 @@ services:
 
     volumes:
       - type: bind
-        source: /home/open-terminal/workspace
+        source: /home/open-terminal/AESOP-Open-Terminal/workspace
         target: /workspace
 
     cap_drop:
@@ -60,6 +55,6 @@ services:
 
 secrets:
   api_key:
-    file: /home/open-terminal/deployment/api-key
+    file: /home/open-terminal/AESOP-Open-Terminal/deployment/api-key
   github_app_private_key:
-    file: /home/open-terminal/deployment/private-key-gh.pem
+    file: /home/open-terminal/AESOP-Open-Terminal/deployment/private-key-gh.pem
