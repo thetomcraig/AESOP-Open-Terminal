@@ -3,4 +3,4 @@
     email = 360448379+aesop-open-terminal[bot]@users.noreply.github.com
 
 [safe]
-    directory = /workspace/movie-search
+    directory = /workspace/*

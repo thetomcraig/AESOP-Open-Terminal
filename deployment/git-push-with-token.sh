@@ -65,4 +65,4 @@ EOF
 
 # Execute git push with token embedded in URL
 # This avoids exposing the token in shell history or logs [2]
-git push https://x-access-token:${TOKEN}@github.com/${REPO_NAME}.git ${BRANCH_NAME}
+git push https://x-access-token:${TOKEN}@${REPO_NAME}.git ${BRANCH_NAME}
