@@ -17,5 +17,6 @@ COPY gitconfig /open-terminal/gitconfig
 COPY --chmod=755 git-push-with-token.sh /open-terminal/git-push-with-token.sh
 
 RUN mkdir -p /workspace
+RUN git config --system --add safe.directory '/workspace/*'
 
 ENV PATH="/opt/pyjwt/bin:${PATH}"
