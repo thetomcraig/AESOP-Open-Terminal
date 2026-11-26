@@ -26,6 +26,9 @@ services:
       GITHUB_APP_ID: "123456"
       GITHUB_INSTALLATION_ID: "789012"
 
+    group_add:
+      - "2000"
+
     secrets:
       - api_key
       - github_app_private_key

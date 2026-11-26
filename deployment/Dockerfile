@@ -10,6 +10,9 @@ RUN apt-get update \
     && /opt/pyjwt/bin/pip install --no-cache-dir "PyJWT[crypto]" \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 2000 workspace \
+    && usermod -aG workspace user
+
 COPY gitconfig /open-terminal/gitconfig
 COPY --chmod=755 git-push-with-token.sh /open-terminal/git-push-with-token.sh
 
